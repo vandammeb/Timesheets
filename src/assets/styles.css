@@ -1,0 +1,76 @@
+@namespace s "library://ns.adobe.com/flex/spark";
+@namespace mx "library://ns.adobe.com/flex/mx";
+
+
+global
+{
+	roll-over-color: #D1DEB5;
+	focus-color: #D1DEB5;
+	font-family: main;
+	color: #152424;
+}
+
+@font-face {
+	src: url("fonts/MyriadPro-Regular.otf");
+	fontFamily: "main";
+	font-weight: normal;
+	embedAsCFF: true;
+}
+
+@font-face {
+	src: url("fonts/MyriadPro-Bold.otf");
+	fontFamily: "main";
+	font-weight: bold;
+	embedAsCFF: true;
+}
+
+@font-face {
+	src: url("fonts/MyriadPro-Regular.otf");
+	fontFamily: "mainNoCFF";
+	font-weight: normal;
+	embedAsCFF: false;
+}
+
+@font-face {
+	src: url("fonts/MyriadPro-Bold.otf");
+	fontFamily: "mainNoCFF";
+	font-weight: normal;
+	embedAsCFF: false;
+}
+
+s|Application {
+	background-color: #DCDCDC;	
+}
+
+s|DataGroup {
+	color: #929393;
+}
+
+mx|Alert,
+mx|AxisRenderer,
+mx|Button,
+mx|ColumnSeries,
+mx|DataTip,
+mx|DateChooser,
+mx|FormItemLabel,
+mx|Label,
+mx|Tab,
+mx|TextInput,
+mx|ToolTip,
+mx|DataGridItemRenderer {
+	font-family: mainNoCFF;	
+}
+
+s|Label {
+	fontFamily: main;
+}
+
+s|TitleWindow {
+	backgroundColor: #F0F0F0;
+	cornerRadius: 5;
+}
+	
+.title {
+	font-size: 16;
+}
+

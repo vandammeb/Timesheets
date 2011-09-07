@@ -1,0 +1,162 @@
+<?xml version="1.0"?>
+<mx:VDividedBox xmlns:fx="http://ns.adobe.com/mxml/2009"
+		xmlns:s="library://ns.adobe.com/flex/spark"
+		xmlns:mx="library://ns.adobe.com/flex/mx"
+		width="100%"
+		height="100%"
+		creationComplete="creationCompleteHandler(event)">
+
+	<fx:Script>
+		<![CDATA[
+		import mx.collections.ArrayCollection;
+		import mx.events.CollectionEvent;
+		import mx.events.CollectionEventKind;
+		import mx.events.FlexEvent;
+		import mx.managers.PopUpManager;
+
+		import org.as3commons.lang.DateUtils;
+
+		// --------------------------------------------------------------------
+		//
+		// Public Properties
+		//
+		// --------------------------------------------------------------------
+
+		// ----------------------------
+		// worklogs
+		// ----------------------------
+
+		private var _worklogs:ArrayCollection;
+
+		[Bindable(event="worklogsChange")]
+		public function get worklogs():ArrayCollection {
+			return _worklogs;
+		}
+
+		public function set worklogs(value:ArrayCollection):void {
+			if (value !== _worklogs) {
+				_worklogs = value;
+
+				if (_worklogs) {
+					listenForRefreshEventsOnWorklogs();
+				}
+
+				dispatchEvent(new Event("worklogsChange"));
+			}
+		}
+
+		private function listenForRefreshEventsOnWorklogs():void {
+			var handler:Function = function(event:CollectionEvent):void {
+				if (event.kind === CollectionEventKind.REFRESH) {
+					totalLabel.executeBindings();
+				}
+			};
+			_worklogs.addEventListener(CollectionEvent.COLLECTION_CHANGE, handler);
+		}
+
+		// --------------------------------------------------------------------
+		//
+		// Private Methods
+		//
+		// --------------------------------------------------------------------
+
+		private function dateColumnLabelFunction(worklog:WorkLog, column:GridColumn):String {
+			return dateFormatter.format(worklog.date);
+		}
+
+		private function exportToCSV(workLogs:ArrayCollection):void {
+			var result:String = "";
+			var numWorkLogs:uint = workLogs.length;
+
+			for (var i:uint = 0; i < numWorkLogs; i++) {
+				var workLog:WorkLog = workLogs[i];
+				result += (workLog.date.date) + "/" + (workLog.date.month + 1) + "/" + workLog.date.fullYear + ";" + workLog.company + ";" + workLog.project + ";" + workLog.person + ";" + workLog.durationInHours + "\n";
+			}
+
+			Clipboard.generalClipboard.setData(ClipboardFormats.TEXT_FORMAT, result);
+
+			var exportWindow:ExportWindow = new ExportWindow();
+			exportWindow.exportData = result;
+
+			PopUpManager.addPopUp(exportWindow, this);
+			PopUpManager.centerPopUp(exportWindow);
+		}
+
+		private function exportButton_clickHandler(event:MouseEvent):void {
+			exportToCSV(worklogs);
+		}
+
+		private function getTotal(workLogs:ArrayCollection):Number {
+			var result:Number = 0;
+
+			for each (var workLog:WorkLog in workLogs) {
+				result += workLog.durationInHours;
+			}
+
+			return result;
+		}
+
+		private function creationCompleteHandler(event:FlexEvent):void {
+		}
+
+
+		]]>
+	</fx:Script>
+
+	<fx:Declarations>
+		<mx:DateFormatter id="dateFormatter"
+				formatString="YYYY-MM-DD JJ:NN"/>
+	</fx:Declarations>
+
+	<mx:ColumnChart width="100%"
+			height="100%"
+			dataProvider="{worklogs}" showDataTips="true">
+		<mx:series>
+			<mx:ColumnSeries yField="durationInHours"/>
+		</mx:series>
+		<mx:horizontalAxis>
+			<mx:CategoryAxis categoryField="date"/>
+		</mx:horizontalAxis>
+		<mx:verticalAxis>
+			<mx:LinearAxis maximum="24"/>
+		</mx:verticalAxis>
+	</mx:ColumnChart>
+
+	<mx:VBox width="100%"
+			height="100%"
+			paddingLeft="10"
+			paddingRight="10"
+			paddingTop="10"
+			paddingBottom="10">
+		<s:DataGrid width="100%"
+				height="100%"
+				dataProvider="{worklogs}">
+			<s:columns>
+				<s:ArrayList>
+					<s:GridColumn dataField="date"
+							headerText="Date"
+							labelFunction="dateColumnLabelFunction"/>
+					<s:GridColumn dataField="durationInHours"
+							headerText="Duration (h)"/>
+					<s:GridColumn dataField="company"
+							headerText="Company"/>
+					<s:GridColumn dataField="project"
+							headerText="Project"/>
+					<s:GridColumn dataField="person"
+							headerText="Person"/>
+				</s:ArrayList>
+			</s:columns>
+		</s:DataGrid>
+		<mx:HBox width="100%"
+				verticalAlign="middle">
+			<s:Label id="totalLabel"
+					text="{'Total: ' + getTotal(worklogs) + ' hours = ' + getTotal(worklogs)/8 + ' days'}"
+					fontWeight="bold"/>
+			<mx:Spacer width="100%"/>
+			<s:Button id="exportButton"
+					label="Export"
+					click="exportButton_clickHandler(event)"/>
+		</mx:HBox>
+	</mx:VBox>
+
+</mx:VDividedBox>

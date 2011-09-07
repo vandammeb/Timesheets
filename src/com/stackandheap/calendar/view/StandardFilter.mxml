@@ -1,0 +1,416 @@
+<?xml version="1.0"?>
+<mx:VBox xmlns:mx="http://www.adobe.com/2006/mxml"
+		xmlns:s="spark.components.*"
+		width="100%"
+		height="100%"
+		backgroundColor="0xD6DDE5"
+		paddingLeft="10"
+		paddingRight="10"
+		paddingTop="10"
+		paddingBottom="10"
+		creationComplete="creationCompleteHandler(event)">
+
+	<mx:Script><![CDATA[
+		import com.stackandheap.calendar.command.CreateWorkLogsFromEventsCommand;
+		import com.stackandheap.calendar.domain.entity.Client;
+
+		import mx.collections.ArrayCollection;
+		import mx.collections.Sort;
+		import mx.events.FlexEvent;
+
+		import org.as3commons.lang.DateUtils;
+		import org.as3commons.lang.StringUtils;
+
+		import spark.events.IndexChangeEvent;
+
+		// --------------------------------------------------------------------
+		//
+		// Public Variables
+		//
+		// --------------------------------------------------------------------
+
+		// --------------------------------------------------------------------
+		//
+		// Private Variables
+		//
+		// --------------------------------------------------------------------
+
+		[Bindable]
+		private var _companies:ArrayCollection;
+
+		[Bindable]
+		private var _people:ArrayCollection;
+
+		[Bindable]
+		private var _groupByDay:Boolean = true;
+
+		[Bindable]
+		private var _includeNonBillable:Boolean = true;
+
+		// --------------------------------------------------------------------
+		//
+		// Properties
+		//
+		// --------------------------------------------------------------------
+
+		// ----------------------------
+		// events
+		// ----------------------------
+
+		private var _events:ArrayCollection;
+
+		[Bindable(event="eventsChange")]
+		public function get events():ArrayCollection {
+			return _events;
+		}
+
+		public function set events(value:ArrayCollection):void {
+			if (value !== _events) {
+				_events = value;
+				createWorkLogs();
+				getCompaniesFromWorkLogs();
+				getPeopleFromWorkLogs();
+				filterWorkLogs();
+				dispatchEvent(new Event("eventsChange"));
+			}
+		}
+
+		// ----------------------------
+		// workLogs
+		// ----------------------------
+
+		private var _workLogs:ArrayCollection;
+
+		[Bindable(event="workLogsChange")]
+		public function get workLogs():ArrayCollection {
+			return _workLogs;
+		}
+
+		private function setWorkLogs(value:ArrayCollection):void {
+			if (value !== _workLogs) {
+				_workLogs = value;
+				dispatchEvent(new Event("workLogsChange"));
+			}
+		}
+
+		// --------------------------------------------------------------------
+		//
+		// Private Methods
+		//
+		// --------------------------------------------------------------------
+
+		private function creationCompleteHandler(event:FlexEvent):void {
+			setDateSpecificationToThisWeek();
+		}
+
+		private function getCompanies(workLogs:ArrayCollection):ArrayCollection {
+			var result:ArrayCollection = new ArrayCollection();
+
+			for each (var workLog:WorkLog in workLogs) {
+				var clientName:String = workLog.company;
+				var client:Client = getClientByName(clientName, result);
+
+				if (!client) {
+					client = new Client(clientName);
+					result.addItem(client);
+				}
+
+				var projectName:String = workLog.project;
+				if (!client.hasProject(projectName)) {
+					client.addProject(projectName);
+				}
+			}
+
+			result.addItem("- ALL -");
+
+			result.sort = new Sort();
+			result.sort.compareFunction = compareCompanies;
+			result.refresh();
+
+			return result;
+		}
+
+		private function compareCompanies(a:Object, b:Object, fields:Array = null):int {
+			if (a is String) {
+				return -1;
+			} else if (b is String) {
+				return 1;
+			} else if (a is Client && b is Client) {
+				var nameA:String = Client(a).name;
+				var nameB:String = Client(b).name;
+				return StringUtils.naturalCompare(nameA, nameB);
+			}
+			return 0;
+		}
+
+		private function getClientByName(name:String, clients:ArrayCollection):Client {
+			for each (var client:Client in clients) {
+				if (client.name === name) {
+					return client;
+				}
+			}
+			return null;
+		}
+
+		private function getProjects(workLogs:ArrayCollection):ArrayCollection {
+			var result:ArrayCollection = getDistinct(workLogs, "project");
+			result.addItem("- ALL -");
+			return result;
+		}
+
+		private function getPeople(workLogs:ArrayCollection):ArrayCollection {
+			var result:ArrayCollection = getDistinct(workLogs, "person");
+			result.addItem("- ALL -");
+			return result;
+		}
+
+		private function getDistinct(workLogs:ArrayCollection, property:String):ArrayCollection {
+			var result:ArrayCollection = new ArrayCollection();
+
+			for each (var workLog:WorkLog in workLogs) {
+				if (result.getItemIndex(workLog[property]) == -1) {
+					result.addItem(workLog[property]);
+				}
+			}
+
+			result.sort = new Sort();
+			result.refresh();
+
+			return result;
+		}
+
+		private function filterWorkLogs():void {
+			_workLogs.filterFunction = filterWorkLog;
+			_workLogs.refresh();
+		}
+
+		private function filterWorkLog(workLog:WorkLog):Boolean {
+			var clientSelection:Object = (companyDropDownList.selectedItem === undefined ? null : companyDropDownList.selectedItem);
+			if (clientSelection is Client) {
+				if (workLog.company != Client(clientSelection).name) {
+					return false;
+				}
+			}
+
+			var project:String = (projectDropDownList.selectedItem === undefined ? null : String(projectDropDownList.selectedItem));
+			if (project && (project != "- ALL -")) {
+				if (workLog.project != project) {
+					return false;
+				}
+			}
+
+			var person:String = (personDropDownList.selectedItem === undefined ? null : String(personDropDownList.selectedItem));
+			if (person && (person != "- ALL -")) {
+				if (workLog.person != person) {
+					return false;
+				}
+			}
+
+			var fromDate:Date = fromDateField.selectedDate as Date;
+			if (fromDate) {
+				if (workLog.date.time < fromDate.time) {
+					return false;
+				}
+			}
+
+			var toDate:Date = toDateField.selectedDate as Date;
+			if (toDate) {
+				// add 1 day to include the worklogs from the end date
+				toDate = DateUtils.addDays(toDate, 1);
+				if (workLog.date.time > toDate.time) {
+					return false;
+				}
+			}
+
+			if (!_includeNonBillable && !workLog.billable) {
+				return false;
+			}
+
+			return true;
+		}
+
+		private function groupByDayCheckBox_changeHandler(event:Event):void {
+			_groupByDay = groupByDayCheckBox.selected;
+			createWorkLogs();
+			filterWorkLogs();
+		}
+
+		private function includeNonBillableCheckBox_changeHandler(event:Event):void {
+			_includeNonBillable = includeNonBillableCheckBox.selected;
+			filterWorkLogs();
+		}
+
+		private function createWorkLogs():void {
+			var cmd:CreateWorkLogsFromEventsCommand = new CreateWorkLogsFromEventsCommand(events);
+			cmd.groupByDay = _groupByDay;
+			setWorkLogs(cmd.execute());
+		}
+
+		private function getCompaniesFromWorkLogs():void {
+			_companies = getCompanies(_workLogs);
+		}
+
+		private function getPeopleFromWorkLogs():void {
+			_people = getPeople(_workLogs);
+		}
+
+		private function setDateSpecificationToThisWeek():void {
+			var now:Date = new Date();
+			fromDateField.selectedDate = DateUtils.getStartOfWeek(now);
+			toDateField.selectedDate = DateUtils.getEndOfWeek(now);
+		}
+
+		private function companyDropDownListLabelFunction(item:Object):String {
+			if (item is Client) {
+				return Client(item).name;
+			}
+			return String(item);
+		}
+
+		private function companyDropDownList_changeHandler(event:IndexChangeEvent):void {
+			fillProjectList();
+			filterWorkLogs();
+		}
+
+		private function fillProjectList():void {
+			var clientSelection:Object = companyDropDownList.selectedItem;
+			var projectList:ArrayCollection = new ArrayCollection();
+
+			if (clientSelection is Client) {
+				var client:Client = Client(clientSelection);
+				projectList.source = client.projects.toArray();
+			}
+
+			projectList.addItem("- ALL -");
+			projectList.sort = new Sort();
+			projectList.refresh();
+
+			projectDropDownList.dataProvider = projectList;
+
+			setInitialSelectionOnProjectList();
+		}
+
+		private function setInitialSelectionOnProjectList():void {
+			if (projectDropDownList.dataProvider) {
+				var isOnlyOneProject:Boolean = (projectDropDownList.dataProvider.length == 2);
+				if (isOnlyOneProject) {
+					projectDropDownList.selectedIndex = 1;
+				} else {
+					projectDropDownList.selectedIndex = 0;
+				}
+			}
+		}
+		]]>
+	</mx:Script>
+
+	<s:Label text="FILTER"
+			fontWeight="bold"
+			color="0x666666"/>
+	<mx:HRule width="100%"/>
+
+	<mx:Grid width="100%">
+		<mx:GridRow width="100%">
+			<mx:GridItem verticalAlign="middle">
+				<s:Label text="Company:"/>
+			</mx:GridItem>
+			<mx:GridItem width="100%"
+					verticalAlign="middle">
+				<s:DropDownList id="companyDropDownList"
+						width="100%"
+						dataProvider="{_companies}"
+						selectedIndex="0"
+						labelFunction="companyDropDownListLabelFunction"
+						change="companyDropDownList_changeHandler(event)"/>
+			</mx:GridItem>
+		</mx:GridRow>
+
+		<mx:GridRow width="100%">
+			<mx:GridItem verticalAlign="middle">
+				<s:Label text="Project:"/>
+			</mx:GridItem>
+			<mx:GridItem width="100%"
+					verticalAlign="middle">
+				<s:DropDownList id="projectDropDownList"
+						width="100%"
+						change="filterWorkLogs()"/>
+			</mx:GridItem>
+		</mx:GridRow>
+
+		<mx:GridRow width="100%">
+			<mx:GridItem verticalAlign="middle">
+				<s:Label text="Consultant:"/>
+			</mx:GridItem>
+			<mx:GridItem width="100%"
+					verticalAlign="middle">
+				<s:DropDownList id="personDropDownList"
+						width="100%"
+						selectedIndex="0"
+						dataProvider="{_people}"
+						change="filterWorkLogs()"/>
+			</mx:GridItem>
+		</mx:GridRow>
+
+		<mx:GridRow width="100%">
+			<mx:GridItem colSpan="2">
+				<mx:Spacer width="100%"
+						height="10"/>
+			</mx:GridItem>
+		</mx:GridRow>
+
+		<mx:GridRow width="100%">
+			<mx:GridItem verticalAlign="middle">
+				<s:Label text="From:"/>
+			</mx:GridItem>
+			<mx:GridItem width="100%">
+				<mx:DateField id="fromDateField"
+						width="100%"
+						change="filterWorkLogs()"
+						firstDayOfWeek="1"/>
+			</mx:GridItem>
+		</mx:GridRow>
+
+		<mx:GridRow width="100%">
+			<mx:GridItem verticalAlign="middle">
+				<s:Label text="To:"/>
+			</mx:GridItem>
+			<mx:GridItem width="100%">
+				<mx:DateField id="toDateField"
+						width="100%"
+						change="filterWorkLogs()"
+						firstDayOfWeek="1"/>
+			</mx:GridItem>
+		</mx:GridRow>
+
+		<mx:GridRow width="100%">
+			<mx:GridItem colSpan="2">
+				<mx:Spacer width="100%"
+						height="10"/>
+			</mx:GridItem>
+		</mx:GridRow>
+
+		<mx:GridRow width="100%">
+			<mx:GridItem verticalAlign="middle">
+				<s:Label text=""/>
+			</mx:GridItem>
+			<mx:GridItem width="100%">
+				<s:CheckBox id="groupByDayCheckBox"
+						label="Group by day"
+						selected="{_groupByDay}"
+						change="groupByDayCheckBox_changeHandler(event)"/>
+			</mx:GridItem>
+		</mx:GridRow>
+		<mx:GridRow width="100%">
+			<mx:GridItem verticalAlign="middle">
+				<s:Label text=""/>
+			</mx:GridItem>
+			<mx:GridItem width="100%">
+				<s:CheckBox id="includeNonBillableCheckBox"
+						label="Include non-billable"
+						selected="{_includeNonBillable}"
+						change="includeNonBillableCheckBox_changeHandler(event)"/>
+			</mx:GridItem>
+		</mx:GridRow>
+	</mx:Grid>
+
+
+</mx:VBox>

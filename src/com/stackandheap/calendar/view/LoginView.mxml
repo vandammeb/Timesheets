@@ -1,0 +1,78 @@
+<?xml version="1.0"?>
+<s:Panel xmlns:fx="http://ns.adobe.com/mxml/2009"
+		xmlns:s="library://ns.adobe.com/flex/spark"
+		xmlns:mx="library://ns.adobe.com/flex/mx"
+		width="400"
+		title="Timesheet Login">
+
+	<fx:Metadata>
+		[Event(name="loginSuccess")]
+	</fx:Metadata>
+
+	<fx:Script>
+		<![CDATA[
+		import com.stackandheap.calendar.application.Session;
+
+		import mx.controls.Alert;
+
+		import mx.rpc.AsyncToken;
+		import mx.rpc.events.FaultEvent;
+		import mx.rpc.events.ResultEvent;
+		import mx.rpc.http.HTTPService;
+
+		import org.as3commons.lang.StringUtils;
+
+		private function loginButton_clickHandler(event:MouseEvent):void {
+			login();
+		}
+
+		private function login():void {
+			var httpService:HTTPService = new HTTPService();
+			httpService.method = "POST";
+			httpService.url = "https://www.google.com/accounts/ClientLogin";
+
+			var parameters:Object = {};
+			parameters.accountType = "HOSTED_OR_GOOGLE";
+			parameters.Email = StringUtils.trim(usernameTextInput.text);
+			parameters.Passwd = StringUtils.trim(passwordTextInput.text);
+			parameters.service = "cl";
+			parameters.source = "StackAndHeap-timesheets-0.4";
+
+			var token:AsyncToken = httpService.send(parameters);
+			token.addResponder(new mx.rpc.Responder(clientLogin_resultHandler, clientLogin_faultHandler));
+		}
+
+		private function clientLogin_resultHandler(event:ResultEvent):void {
+			var rawLoginResponse:String = String(event.result);
+			var loginResponses:Array = rawLoginResponse.split("\n");
+
+			for each (var loginResponse:String in loginResponses) {
+				if (StringUtils.startsWith(loginResponse, "Auth=")) {
+					Session.auth = StringUtils.substringAfter(loginResponse, "Auth=");
+				}
+			}
+
+			dispatchEvent(new Event("loginSuccess"));
+		}
+
+		private function clientLogin_faultHandler(event:FaultEvent):void {
+			var text:String = "Error logging in: " + event.fault.content;
+			Alert.show(text, "Login Error");
+		}
+
+		]]>
+	</fx:Script>
+
+	<s:Form width="100%">
+		<s:FormItem width="100%" label="Username:">
+			<s:TextInput id="usernameTextInput" width="100%" text="christophe@stackandheap.com"/>
+		</s:FormItem>
+		<s:FormItem width="100%" label="Password:">
+			<s:TextInput id="passwordTextInput" width="100%" displayAsPassword="true" text=""/>
+		</s:FormItem>
+		<s:FormItem width="100%">
+			<s:Button id="loginButton" label="Login" click="loginButton_clickHandler(event)"/>
+		</s:FormItem>
+	</s:Form>
+
+</s:Panel>

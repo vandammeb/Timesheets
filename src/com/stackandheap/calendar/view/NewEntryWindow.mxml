@@ -1,0 +1,222 @@
+<?xml version="1.0"?>
+<s:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009"
+		xmlns:s="library://ns.adobe.com/flex/spark"
+		xmlns:mx="library://ns.adobe.com/flex/mx"
+		title="New Timesheet Entry"
+		width="500"
+		close="closeWindow()">
+
+	<fx:Script>
+		<![CDATA[
+		import com.stackandheap.calendar.application.Session;
+
+		import mx.collections.ArrayCollection;
+
+		import mx.collections.IList;
+
+		import mx.core.FlexGlobals;
+		import mx.managers.PopUpManager;
+		import mx.rpc.AsyncToken;
+		import mx.rpc.Responder;
+		import mx.rpc.events.FaultEvent;
+		import mx.rpc.events.ResultEvent;
+		import mx.rpc.http.HTTPService;
+
+		import org.as3commons.lang.StringUtils;
+
+		private static var _times:ArrayCollection = createTimes();
+
+		private static function createTimes():ArrayCollection {
+			var result:ArrayCollection = new ArrayCollection();
+			result.addItem("00:00");
+			result.addItem("00:15");
+			result.addItem("00:30");
+			result.addItem("00:45");
+			result.addItem("01:00");
+			result.addItem("01:15");
+			result.addItem("01:30");
+			result.addItem("01:45");
+			result.addItem("02:00");
+			result.addItem("02:15");
+			result.addItem("02:30");
+			result.addItem("02:45");
+			result.addItem("03:00");
+			result.addItem("03:15");
+			result.addItem("03:30");
+			result.addItem("03:45");
+			result.addItem("04:00");
+			result.addItem("04:15");
+			result.addItem("04:30");
+			result.addItem("04:45");
+			result.addItem("05:00");
+			result.addItem("05:15");
+			result.addItem("05:30");
+			result.addItem("05:45");
+			result.addItem("06:00");
+			result.addItem("06:15");
+			result.addItem("06:30");
+			result.addItem("06:45");
+			result.addItem("07:00");
+			result.addItem("07:15");
+			result.addItem("07:30");
+			result.addItem("07:45");
+			result.addItem("08:00");
+			result.addItem("08:15");
+			result.addItem("08:30");
+			result.addItem("08:45");
+			result.addItem("09:00");
+			result.addItem("09:15");
+			result.addItem("09:30");
+			result.addItem("09:45");
+			result.addItem("10:00");
+			result.addItem("10:15");
+			result.addItem("10:30");
+			result.addItem("10:45");
+			result.addItem("11:00");
+			result.addItem("11:15");
+			result.addItem("11:30");
+			result.addItem("11:45");
+			result.addItem("12:00");
+			result.addItem("12:15");
+			result.addItem("12:30");
+			result.addItem("12:45");
+			result.addItem("13:00");
+			result.addItem("13:15");
+			result.addItem("13:30");
+			result.addItem("13:45");
+			result.addItem("14:00");
+			result.addItem("14:15");
+			result.addItem("14:30");
+			result.addItem("14:45");
+			result.addItem("15:00");
+			result.addItem("15:15");
+			result.addItem("15:30");
+			result.addItem("15:45");
+			result.addItem("16:00");
+			result.addItem("16:15");
+			result.addItem("16:30");
+			result.addItem("16:45");
+			result.addItem("17:00");
+			result.addItem("17:15");
+			result.addItem("17:30");
+			result.addItem("17:45");
+			result.addItem("18:00");
+			result.addItem("18:15");
+			result.addItem("18:30");
+			result.addItem("18:45");
+			result.addItem("19:00");
+			result.addItem("19:15");
+			result.addItem("19:30");
+			result.addItem("19:45");
+			result.addItem("20:00");
+			result.addItem("20:15");
+			result.addItem("20:30");
+			result.addItem("20:45");
+			result.addItem("21:00");
+			result.addItem("21:15");
+			result.addItem("21:30");
+			result.addItem("21:45");
+			result.addItem("22:00");
+			result.addItem("22:15");
+			result.addItem("22:30");
+			result.addItem("22:45");
+			result.addItem("23:00");
+			result.addItem("23:15");
+			result.addItem("23:30");
+			result.addItem("23:45");
+
+			return result;
+		}
+
+		public static function show():NewEntryWindow {
+			var result:NewEntryWindow = new NewEntryWindow();
+			PopUpManager.addPopUp(result, FlexGlobals.topLevelApplication as DisplayObject, true);
+			PopUpManager.centerPopUp(result);
+			return result;
+		}
+
+		private function closeWindow():void {
+			PopUpManager.removePopUp(this);
+		}
+
+		private function okButton_clickHandler(event:MouseEvent):void {
+			saveEntry();
+		}
+
+		private function saveEntry():void {
+			var httpService:HTTPService = new HTTPService();
+			httpService.method = "POST";
+			httpService.url = "https://www.google.com/calendar/feeds/" + Session.CALENDER_ID + "/private/full";
+			httpService.headers = {};
+			httpService.headers.Authorization = "GoogleLogin auth=" + Session.auth;
+
+			var title:String = customerComboBox.selectedItem + "-" + projectComboBox.selectedItem + "-" + personComboBox.selectedItem;
+			//var description:String = StringUtils.trim(descriptionTextArea.text);
+			var from:String = createDateString(beginDateChooser, beginTimeDropDownList); // 2011-09-02T09:00:00.000Z
+			var to:String = createDateString(endDateChooser, endTimeDropDownList);
+			var entry:String = "{'data': {'title': '" + title + "', 'details': '', 'transparency': 'opaque', 'status': 'confirmed', 'location': '', 'when': [{'start': '" + from + "', 'end': '" + to + "'}]}}";
+
+			// application/atom+xml
+			httpService.contentType = "application/json";
+			
+			var token:AsyncToken = httpService.send(entry);
+			token.addResponder(new mx.rpc.Responder(saveEntry_resultHandler, saveEntry_faultHandler));
+		}
+
+		private function createDateString(dateChooser:DateField, timeDropDownList:DropDownList):String {
+			// // 2011-09-02T09:00:00.000Z
+			var date:Date = dateChooser.selectedDate;
+			var dateString:String = date.fullYear + "-" + (date.month+1) + "-" + date.date;
+			var timeString:String = "T" + timeDropDownList.selectedItem + ":00.000Z";
+			return (dateString + timeString);
+		}
+
+		private function saveEntry_resultHandler(event:ResultEvent):void {
+			trace();
+		}
+
+		private function saveEntry_faultHandler(event:FaultEvent):void {
+			trace();
+		}
+		]]>
+	</fx:Script>
+
+	<s:layout>
+		<s:VerticalLayout paddingBottom="10" paddingLeft="10" paddingRight="10" paddingTop="10"/>
+	</s:layout>
+
+	<s:Form width="100%">
+		<s:FormItem width="100%" label="Time:">
+			<s:HGroup>
+				<mx:DateField id="beginDateChooser" width="50"/>
+				<s:DropDownList id="beginTimeDropDownList" dataProvider="{_times}"/>
+				<s:Label text="to"/>
+				<mx:DateField id="endDateChooser"/>
+				<s:DropDownList id="endTimeDropDownList" dataProvider="{_times}"/>
+			</s:HGroup>
+		</s:FormItem>
+		<s:FormItem width="100%" label="Customer:">
+			<s:ComboBox id="customerComboBox"/>
+		</s:FormItem>
+		<s:FormItem width="100%" label="Project:">
+			<s:ComboBox id="projectComboBox"/>
+		</s:FormItem>
+		<s:FormItem width="100%" label="Person:">
+			<s:ComboBox id="personComboBox"/>
+		</s:FormItem>
+		<s:FormItem width="100%" label="Billable:">
+			<s:CheckBox id="billableCheckBox"/>
+		</s:FormItem>
+		<s:FormItem width="100%" label="Description:">
+			<s:TextArea id="descriptionTextArea"/>
+		</s:FormItem>
+	</s:Form>
+
+	<mx:HRule width="100%"/>
+
+	<mx:ControlBar width="100%" horizontalAlign="right" paddingBottom="0" paddingLeft="0" paddingRight="0" paddingTop="0">
+		<s:Button id="okButton" label="OK" click="okButton_clickHandler(event)"/>
+		<s:Button id="cancelButton" label="Cancel"/>
+	</mx:ControlBar>
+
+</s:TitleWindow>

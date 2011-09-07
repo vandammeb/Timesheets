@@ -1,0 +1,435 @@
+<?xml version="1.0"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009"
+		xmlns:s="library://ns.adobe.com/flex/spark"
+		xmlns:controls="mx.controls.*"
+		xmlns:datagridclasses="mx.controls.dataGridClasses.*"
+		xmlns:mx="library://ns.adobe.com/flex/mx"
+		xmlns:containers="mx.containers.*"
+		xmlns:view="com.stackandheap.calendar.view.*"
+		creationComplete="windowedApplication1_creationCompleteHandler(event)">
+	<fx:Script>
+	    <![CDATA[
+		import com.stackandheap.calendar.application.Session;
+		import com.stackandheap.calendar.command.CreateWorkLogsFromEventsCommand;
+		import com.stackandheap.calendar.domain.entity.Client;
+		import com.stackandheap.calendar.view.NewEntryWindow;
+
+		import deng.fzip.FZip;
+		import deng.fzip.FZipErrorEvent;
+		import deng.fzip.FZipFile;
+
+		import mx.collections.ArrayCollection;
+
+		import mx.collections.ArrayCollection;
+		import mx.collections.Sort;
+		import mx.collections.SortField;
+		import mx.controls.Alert;
+		import mx.events.FlexEvent;
+		import mx.rpc.AsyncToken;
+		import mx.rpc.Responder;
+		import mx.rpc.events.FaultEvent;
+		import mx.rpc.events.ResultEvent;
+		import mx.rpc.http.HTTPService;
+
+		import org.as3commons.lang.DateUtils;
+		import org.as3commons.lang.StringUtils;
+
+		private var _urlLoader:URLLoader;
+
+		[Bindable]
+		private var _events:ArrayCollection = new ArrayCollection();
+
+		[Bindable]
+		private var _companies:ArrayCollection = new ArrayCollection();
+
+		[Bindable]
+		private var _projects:ArrayCollection = new ArrayCollection();
+
+		[Bindable]
+		private var _people:ArrayCollection = new ArrayCollection();
+
+		private var _file:File;
+		private var _zip:FZip;
+
+
+		// --------------------------------------------------------------------
+		//
+		// Private Methods
+		//
+		// --------------------------------------------------------------------
+
+		private function windowedApplication1_creationCompleteHandler(event:FlexEvent):void {
+			createMenu();
+		}
+
+		private function createMenu():void {
+			var fileMenu:NativeMenuItem;
+
+			if (NativeWindow.supportsMenu) {
+				nativeWindow.menu = new NativeMenu();
+				nativeWindow.menu.addEventListener(Event.SELECT, itemClicked);
+				nativeWindow.menu.addItem(createFileMenu());
+			}
+
+			if (NativeApplication.supportsMenu) {
+				NativeApplication.nativeApplication.menu.addEventListener(Event.SELECT, itemClicked);
+				NativeApplication.nativeApplication.menu.addItem(createFileMenu());
+			}
+		}
+
+		private function createFileMenu():NativeMenuItem {
+			var menuItem:NativeMenuItem = new NativeMenuItem("File");
+
+			var subMenu:NativeMenu = new NativeMenu();
+			menuItem.submenu = subMenu;
+
+			var openItem:NativeMenuItem = new NativeMenuItem("Open...");
+			openItem.name = "open";
+			subMenu.addItem(openItem);
+
+			var openOnlineItem:NativeMenuItem = new NativeMenuItem("Open online calendar");
+			openOnlineItem.name = "openOnline";
+			subMenu.addItem(openOnlineItem);
+
+			return menuItem;
+		}
+
+		private function itemClicked(event:Event):void {
+			//trace("You Selected: ", event.target);
+
+			if (event.target is NativeMenuItem) {
+				var menuItem:NativeMenuItem = NativeMenuItem(event.target);
+
+				if (menuItem.name == "open") {
+					openFileChooser();
+				} else if (menuItem.name == "openOnline") {
+					downloadCalendar();
+				}
+			}
+		}
+
+		private function openFileChooser():void {
+			_file = new File();
+			_file.addEventListener(Event.SELECT, fileSelected);
+			_file.browseForOpen("Open", [new FileFilter("Calendar", "*.ics")]);
+		}
+
+		private function fileSelected(event:Event):void {
+			trace("event: " + event);
+			loadCalendar(_file.url);
+		}
+
+		private function loadCalendar(path:String):void {
+			_urlLoader = new URLLoader();
+			_urlLoader.addEventListener(Event.COMPLETE, loader_completeHandler);
+			_urlLoader.load(new URLRequest(path));
+		}
+
+		private function loader_completeHandler(event:Event):void {
+			trace(event);
+
+			var calendarData:String = String(_urlLoader.data);
+			readCalendarData(calendarData);
+		}
+
+		private function readCalendarData(data:String):void {
+			trace("Read calendar data");
+
+			parseData(data);
+
+			//countHours();
+
+			mainViewStack.selectedIndex = 1;
+
+			//filterWorkLogs();
+		}
+
+		private function downloadCalendar():void {
+			trace("Downloading calendar");
+			_urlLoader = new URLLoader();
+			_urlLoader.dataFormat = URLLoaderDataFormat.BINARY;
+			var urlRequest:URLRequest = new URLRequest("https://www.google.com/calendar/exporticalzip");
+			_urlLoader.addEventListener(Event.COMPLETE, downloadCalendar_completeHandler);
+			_urlLoader.addEventListener(IOErrorEvent.IO_ERROR, downloadCalendar_ioErrorHandler);
+			_urlLoader.load(urlRequest);
+		}
+
+		private function downloadCalendar_completeHandler(event:Event):void {
+			trace("Downloaded calendar");
+
+			// download zip file to disk
+			var urlLoader:URLLoader = URLLoader(event.target);
+			var fileName:String = "calendar.zip";
+			//fileName = removeSpecialCharacters(fileName);
+			var filePath:String = "c:\\" + fileName;
+			var file:File = File.documentsDirectory.resolvePath(filePath);
+			var fileStream:FileStream = new FileStream();
+
+			try {
+				fileStream.open(file, FileMode.WRITE);
+			} catch (e:IOError) {
+				trace("Could not open file for writing");
+			}
+
+			try {
+				fileStream.writeBytes(_urlLoader.data, 0, _urlLoader.data.length);
+			} catch (e:IOError) {
+				trace(e.message);
+			}
+
+			fileStream.close();
+
+			unzip();
+		}
+
+		private function unzip():void {
+			_zip = new FZip();
+			_zip.addEventListener(Event.OPEN, onOpen);
+			_zip.addEventListener(Event.COMPLETE, onComplete);
+			_zip.addEventListener(FZipErrorEvent.PARSE_ERROR, unzip_parseError);
+			_zip.addEventListener(IOErrorEvent.IO_ERROR, unzip_ioError);
+			_zip.load(new URLRequest("c:\\calendar.zip"));
+		}
+
+		private function onOpen(evt:Event):void {
+			trace("open zip");
+		}
+
+		private function unzip_parseError(event:FZipErrorEvent):void {
+			Alert.show("Could not unzip calendar: " + event.text, "Unzip Error");
+		}
+
+		private function unzip_ioError(event:IOErrorEvent):void {
+			Alert.show("Could not unzip calendar: " + event.text, "Unzip IOError");
+		}
+
+		private function onComplete(evt:Event):void {
+			trace("done");
+
+			var foundCalendar:Boolean = false;
+			var numZipFiles:uint = _zip.getFileCount();
+
+			for (var i:uint = 0; i < numZipFiles; i++) {
+				var zipFile:FZipFile = _zip.getFileAt(i);
+				trace("zip file=: " + zipFile.filename);
+				if (zipFile.filename.indexOf("Time") > -1) {
+					foundCalendar = true;
+					readCalendarData(zipFile.getContentAsString());
+				}
+			}
+
+			if (!foundCalendar) {
+				Alert.show("No Time Sheets calendar was found.", "Calendar Not Found");
+			}
+		}
+
+		private function downloadCalendar_ioErrorHandler(event:IOErrorEvent):void {
+			trace("Download error");
+			Alert.show("Could not download calendar: " + event.text, "Download Error");
+		}
+
+		private function countHours():void {
+			var numEvents:uint = _events.length;
+			var totalMinutes:uint = 0;
+
+			for (var i:uint = 0; i < numEvents; i++) {
+				var event:CalendarEvent = _events[i];
+				if (event.summary.indexOf("J&J") == 0) {
+
+					if (event.start.month >= 7) {
+						trace(event.start.date + "/" + (event.start.month + 1) + "/" + event.start.fullYear + ", " + event.summary + ", " + event.durationInHours);
+
+						totalMinutes += event.durationInMinutes;
+					}
+				} else {
+					if (event.summary.indexOf("Traficon") > -1 || event.summary.indexOf("Deviant") > -1 || event.summary.indexOf("NON-BILLABLE") > -1) {
+
+					} else {
+						//trace("UNKNOWN: " + event);
+					}
+				}
+			}
+		}
+
+		private function parseData(data:String):void {
+			var lines:Array = data.split("\r\n");
+			var numLines:uint = lines.length;
+			var event:CalendarEvent;
+
+			var events:ArrayCollection = new ArrayCollection();
+			events.sort = new Sort();
+			events.sort.fields = [new SortField("start")];
+			events.refresh();
+
+			for (var i:uint = 0; i < numLines; i++) {
+				var line:String = lines[i];
+				var lineParts:Array = line.split(":");
+				var key:String = lineParts[0];
+				var value:String = (lineParts.length >= 2 ? lineParts[1] : null);
+
+				if (line === "BEGIN:VEVENT") {
+					event = new CalendarEvent();
+				}
+
+				if ((key == "DTSTART") || (key == "DTSTART;VALUE=DATE")) {
+					event.start = parseDate(value);
+				}
+
+				if ((key == "DTEND") || (key == "DTEND;VALUE=DATE")) {
+					event.end = parseDate(value);
+				}
+
+				if (key == "SUMMARY") {
+					event.summary = value.replace("&amp\\;", "&");
+				}
+
+				if (line === "END:VEVENT") {
+					events.addItem(event);
+				}
+			}
+
+			_events = events;
+		}
+
+		private function parseDate(date:String):Date {
+			// 20100902T155834Z
+			// 20100830
+			var result:Date = new Date();
+			result.fullYear = parseInt(date.substr(0, 4));
+			result.month = parseInt(date.substr(4, 2)) - 1;
+			result.date = parseInt(date.substr(6, 2));
+
+			if (date.indexOf("T") > -1) {
+				result.hours = parseInt(date.substr(9, 2)) + 2; // +2 = timezone Brussel
+				result.minutes = parseInt(date.substr(11, 2));
+				result.seconds = parseInt(date.substr(13, 2));
+			}
+
+			return result;
+		}
+
+		private function parseTimeToMinutes(date:Date):uint {
+			return ((date.hours * 60) + date.minutes);
+		}
+
+		private var _httpService:HTTPService = new HTTPService();
+
+
+		private function getAllCalendars():void {
+			_httpService.url = "https://www.google.com/calendar/feeds/default/allcalendars/full";
+			_httpService.method = "GET";
+
+			var token:AsyncToken = _httpService.send(parameters);
+			token.addResponder(new mx.rpc.Responder(getAllCalendars_resultHandler, getAllCalendars_faultHandler));
+		}
+
+		private function getAllCalendars_resultHandler(event:ResultEvent):void {
+			trace();
+
+			var timeSheetURL:String = getTimeSheetURL(event.result);
+
+			loadTimeSheetCalendar();
+		}
+
+		private function getTimeSheetURL(result:Object):String {
+			for each (var entry:Object in result.feed.entry) {
+				if (entry.title.value == "Time Sheets") {
+					return entry.id;
+				}
+			}
+			throw new Error("Timesheet calendar not found");
+		}
+
+		private function getAllCalendars_faultHandler(event:FaultEvent):void {
+			trace();
+
+		}
+
+		private function loginView_loginSuccessHandler(event:Event):void {
+			loadTimeSheetCalendar();
+		}
+
+		private function loadTimeSheetCalendar():void {
+			_httpService.url = "https://www.google.com/calendar/feeds/" + Session.CALENDER_ID + "/private/full";
+			_httpService.method = "GET";
+			_httpService.headers = {};
+			_httpService.headers.Authorization = "GoogleLogin auth=" + Session.auth;
+
+			/*var parameters:Object = {};
+			 parameters["max-results"] = 10000;*/
+
+			var token:AsyncToken = _httpService.send(parameters);
+			token.addResponder(new mx.rpc.Responder(loadCalendar_resultHandler, loadCalendar_faultHandler));
+		}
+
+		private function loadCalendar_resultHandler(event:ResultEvent):void {
+			mainViewStack.selectedIndex = 1;
+		}
+
+		private function loadCalendar_faultHandler(event:FaultEvent):void {
+			Alert.show("Could not load timesheets.");
+		}
+
+		private function newEntryButton_clickHandler(event:MouseEvent):void {
+			NewEntryWindow.show();
+		}
+		]]>
+    </fx:Script>
+
+	<fx:Style source="assets/styles.css"/>
+
+	<s:layout>
+		<s:VerticalLayout gap="0"/>
+	</s:layout>
+
+	<!--<mx:ApplicationControlBar width="100%" height="40" cornerRadius="0"/>-->
+
+	<mx:ViewStack id="mainViewStack"
+			width="100%"
+			height="100%"
+			creationPolicy="all">
+		<mx:VBox width="100%"
+				height="100%"
+				horizontalAlign="center"
+				verticalAlign="middle"
+				backgroundColor="0xE5E5E5">
+			<view:LoginView id="loginView" loginSuccess="loginView_loginSuccessHandler(event)"/>
+		</mx:VBox>
+
+		<mx:HDividedBox width="100%"
+				height="100%"
+				horizontalAlign="right"
+				horizontalGap="2">
+			<s:VGroup width="220" height="100%" gap="-1">
+				<mx:ViewStack width="100%" height="100%">
+					<view:StandardFilter id="standardFilter"
+							events="{_events}"/>
+				</mx:ViewStack>
+				<s:ToggleButton width="100%" height="30" label="Filter Report" cornerRadius="0"/>
+				<s:ToggleButton width="100%" height="30" label="Weekly Report" cornerRadius="0"/>
+				<s:ToggleButton width="100%" height="30" label="Monthly Report" cornerRadius="0"/>
+			</s:VGroup>
+
+			<s:VGroup width="100%"
+					height="100%"
+					gap="0">
+				<s:HGroup paddingBottom="5" paddingLeft="5" paddingRight="5" paddingTop="5">
+					<s:Button id="newEntryButton" label="New Entry" click="newEntryButton_clickHandler(event)"/>
+				</s:HGroup>
+				<mx:ViewStack id="reportViewStack"
+						width="100%"
+						height="100%"
+						backgroundColor="0xF3F3F3">
+					<s:NavigatorContent width="100%"
+							height="100%"
+							label="Report">
+						<view:StandardReport worklogs="{standardFilter.workLogs}"/>
+					</s:NavigatorContent>
+				</mx:ViewStack>
+			</s:VGroup>
+
+		</mx:HDividedBox>
+	</mx:ViewStack>
+
+
+</s:WindowedApplication>
